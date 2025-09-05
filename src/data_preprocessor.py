@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+
+from dlt_utils import DLTReader
 from .model_config import DATA_CONFIG, MODEL_PATHS
 from .utils import validate_dataframe, handle_missing_values
 
@@ -24,9 +26,9 @@ class DataPreprocessor:
         """Load the feature dataset."""
         if file_path is None:
             file_path = MODEL_PATHS["input_data"]
-            
+        dlt_reader = DLTReader(catalog="provisioned-tableau-data", schema="data_science")
         print(f"📊 Loading data from {file_path}...")
-        df = pd.read_csv(file_path)
+        df = dlt_reader.read_table(file_path).toPandas()
         df.set_index('dealer_code', inplace=True)
         
         print(f"✅ Data loaded successfully. Shape: {df.shape}")
