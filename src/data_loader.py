@@ -26,6 +26,7 @@ class DataLoader:
             catalog=DLT_CONFIG["catalog"],
             schema=DLT_CONFIG["jkc_schema"],
         )
+        self.gold_layer_reader = DLTReader(catalog="provisioned-tableau-data", schema="gold_layer")
         self.dealer_list = None
         
     def load_customer_master(self):
@@ -83,8 +84,8 @@ class DataLoader:
         """Load SAS monthly club mapping data."""
         if not self.dealer_list:
             raise ValueError("Customer master must be loaded first to get dealer list")
-            
-        sas_monthly = self.dlt_reader.read_table("monthly_club_mapping")
+        
+        sas_monthly = self.gold_layer_reader.read_table("monthly_club_mapping")
         sas_monthly = sas_monthly.filter(sas_monthly.dealer_code.isin([str(dealer) for dealer in self.dealer_list]))
         return sas_monthly.toPandas()
     
