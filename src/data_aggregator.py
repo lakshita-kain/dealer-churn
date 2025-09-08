@@ -175,7 +175,7 @@ class DataAggregator:
     
     def aggregate_all_data(self, monthly_data, outstanding_df, credit_note_df, 
                           order_types, claim_count, visit_count, days_between_purchase, 
-                          movement_counts, customer_master, territory_master, last_billed):
+                          movement_counts, customer_master, territory_master, last_billed, save_dataset=False):
         """Main method to aggregate all data and create final dataset."""
         print("Starting data aggregation process...")
         
@@ -196,6 +196,7 @@ class DataAggregator:
         )
         
         # Save dataset
-        final_data = self.save_dataset(final_data)
+        if save_dataset:
+            final_data = self.save_dataset(final_data)
         
         return final_data
