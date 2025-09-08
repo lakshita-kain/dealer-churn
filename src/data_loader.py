@@ -44,8 +44,15 @@ class DataLoader:
         """Load sales data filtered for specific dealers and conditions."""
         if not self.dealer_list:
             raise ValueError("Customer master must be loaded first to get dealer list")
-            
-        sales = self.dlt_reader.read_table("sales_data")
+        
+        # Define required columns to optimize loading
+        required_columns = [
+            'dealer_code', 'invoice_date', 'period', 'ndp_value',
+            'invoice_number', 'volume', 'indicator_cancel', 'invoice_type'
+        ]
+        
+        # Load only required columns for better performance
+        sales = self.dlt_reader.read_table("sales_data", columns=required_columns)
         sales = sales.filter(
             (col("dealer_code").isin([str(dealer) for dealer in self.dealer_list])) &
             (col("indicator_cancel").isNull()) &
