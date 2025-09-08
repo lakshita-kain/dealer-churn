@@ -134,7 +134,7 @@ class FeatureEngineer:
             elif row['curr_level'] < row['prev_level']:
                 return 'Demoted'
             else:
-                return 'No Change'
+                return 'no_change'
         
         sas_monthly_data['club_movement'] = sas_monthly_data.apply(classify_movement, axis=1)
         
