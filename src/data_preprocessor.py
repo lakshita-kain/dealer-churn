@@ -5,12 +5,14 @@ Handles feature engineering, encoding, and data preparation for model training.
 
 import pandas as pd
 import numpy as np
+import os
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
 from dlt_utils import DLTReader
-from .model_config import DATA_CONFIG, MODEL_PATHS
-from .utils import validate_dataframe, handle_missing_values
+from src.model_config import DATA_CONFIG, MODEL_PATHS
+from src.utils import validate_dataframe, handle_missing_values
+from src.dtype_manager import DtypeManager, load_dataframe_with_dtypes, find_dtype_file
 
 
 class DataPreprocessor:
@@ -23,15 +25,51 @@ class DataPreprocessor:
         self.target_column = 'churn_status'
         
     def load_data(self, file_path=None):
-        """Load the feature dataset."""
+        """Load the feature dataset with preserved data types."""
         if file_path is None:
             file_path = MODEL_PATHS["input_data"]
-        dlt_reader = DLTReader(catalog="provisioned-tableau-data", schema="data_science")
-        print(f"📊 Loading data from {file_path}...")
-        df = dlt_reader.read_table(file_path).toPandas()
-        df.set_index('dealer_code', inplace=True)
+        
+        # Check if it's a CSV file with dtype information
+        if file_path.endswith('.csv'):
+            try:
+                # Try to load with preserved data types
+                df = load_dataframe_with_dtypes(file_path)
+                print(f"✅ Data loaded with preserved data types from {file_path}")
+            except FileNotFoundError:
+                # Fallback to regular CSV loading
+                print(f"📊 Loading data from {file_path} (no dtype file found)...")
+                df = pd.read_csv(file_path)
+                print(f"⚠️  Warning: Data types may not be preserved")
+        else:
+            # Load from DLT
+            dlt_reader = DLTReader(catalog="provisioned-tableau-data", schema="data_science")
+            print(f"📊 Loading data from DLT table: {file_path}...")
+            df = dlt_reader.read_table(file_path).toPandas()
+            
+            # Try to find and load corresponding dtype file
+            dtype_file_path = find_dtype_file(file_path)
+            
+            if dtype_file_path:
+                try:
+                    print(f"🔍 Found dtype file: {dtype_file_path}")
+                    dtype_manager = DtypeManager(dtype_file_path)
+                    df = dtype_manager.restore_dtypes(df)
+                    print(f"✅ Data types restored from {dtype_file_path}")
+                except Exception as e:
+                    print(f"⚠️  Warning: Could not restore data types from {dtype_file_path}: {e}")
+            else:
+                print(f"⚠️  Warning: No dtype file found for DLT table {file_path}")
+                print(f"   This may cause XGBoost compatibility issues if data types are not numeric")
+        
+        # Set index if dealer_code column exists
+        if 'dealer_code' in df.columns:
+            df.set_index('dealer_code', inplace=True)
         
         print(f"✅ Data loaded successfully. Shape: {df.shape}")
+        print(f"📊 Data types summary:")
+        print(f"   - Object columns: {len(df.select_dtypes(include=['object']).columns)}")
+        print(f"   - Numeric columns: {len(df.select_dtypes(include=[np.number]).columns)}")
+        
         return df
     
     def filter_recent_data(self, df):
@@ -113,6 +151,41 @@ class DataPreprocessor:
         print("✅ Target variable encoded")
         return df
     
+    def handle_categorical_columns(self, df):
+        """Handle all remaining categorical columns by converting to numeric."""
+        print("🔤 Handling remaining categorical columns...")
+        
+        # Identify object columns that are not already encoded
+        object_columns = df.select_dtypes(include=['object']).columns.tolist()
+        
+        # Remove target column if it's in object columns
+        if self.target_column in object_columns:
+            object_columns.remove(self.target_column)
+        
+        # Remove already processed columns
+        processed_columns = ['dealer_club_category', 'zone', 'region_name', 'territory_code']
+        object_columns = [col for col in object_columns if col not in processed_columns]
+        
+        if object_columns:
+            print(f"   Found {len(object_columns)} categorical columns: {object_columns}")
+            
+            for col in object_columns:
+                try:
+                    # Try to convert to numeric first
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    print(f"   ✅ Converted {col} to numeric")
+                except:
+                    # If conversion fails, use label encoding
+                    le = LabelEncoder()
+                    df[col] = le.fit_transform(df[col].astype(str))
+                    self.label_encoders[col] = le
+                    print(f"   ✅ Label encoded {col}")
+        else:
+            print("   ℹ️  No categorical columns to handle")
+        
+        print("✅ Categorical columns handled")
+        return df
+    
     def handle_missing_values(self, df):
         """Handle missing values and infinite values."""
         print("🔧 Handling missing values...")
@@ -141,9 +214,34 @@ class DataPreprocessor:
         
         return df
     
+    def ensure_numeric_types(self, df):
+        """Ensure all columns are numeric types for XGBoost compatibility."""
+        print("🔢 Ensuring all columns are numeric...")
+        
+        # Convert all columns to numeric, coercing errors to NaN
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Fill any NaN values created by conversion
+        df.fillna(0, inplace=True)
+        
+        # Ensure all columns are numeric
+        non_numeric_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
+        if non_numeric_cols:
+            print(f"   ⚠️  Warning: Still have non-numeric columns: {non_numeric_cols}")
+        else:
+            print("   ✅ All columns are now numeric")
+        
+        print("✅ Numeric types ensured")
+        return df
+    
     def prepare_features_and_target(self, df):
         """Separate features and target variable."""
         print("🎯 Preparing features and target...")
+        
+        # Ensure all data is numeric before splitting
+        df = self.ensure_numeric_types(df)
         
         # Separate features and target
         X = df.drop(columns=[self.target_column])
@@ -207,6 +305,9 @@ class DataPreprocessor:
             
             # Encode target variable
             df = self.encode_target_variable(df)
+            
+            # Handle remaining categorical columns
+            df = self.handle_categorical_columns(df)
             
             # Handle missing values
             df = self.handle_missing_values(df)

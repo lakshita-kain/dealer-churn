@@ -87,7 +87,7 @@ EVALUATION_CONFIG = {
 
 # File Paths
 MODEL_PATHS = {
-    "input_data": "offset_features.csv",
+    "input_data": "offset_features",
     "model_output": "models/xgb_churn_model.pkl",
     "preprocessor_output": "models/preprocessor.pkl",
     "feature_importance": "models/feature_importance.csv",

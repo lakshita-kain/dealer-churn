@@ -6,8 +6,9 @@ Handles data merging, aggregation, and pivoting operations.
 import pandas as pd
 
 from dlt_utils import DLTWriter
-from .config import OUTPUT_FILE_PATH
-from .utils import standardize_period_column
+from src.config import OUTPUT_FILE_PATH
+from src.utils import standardize_period_column
+from src.dtype_manager import DtypeManager, save_dataframe_with_dtypes
 
 
 class DataAggregator:
@@ -22,14 +23,6 @@ class DataAggregator:
                           movement_counts, customer_master, territory_master, last_billed):
         """Merge all feature data into a single dataset."""
         print("Merging all features...")
-        
-        # Convert period columns to string for consistent merging
-        # monthly_data = standardize_period_column(monthly_data)
-        # outstanding_df = standardize_period_column(outstanding_df)
-        # credit_note_df = standardize_period_column(credit_note_df)
-        # order_types = standardize_period_column(order_types)
-        # claim_count = standardize_period_column(claim_count)
-        # visit_count = standardize_period_column(visit_count)
         
         outstanding_df['period'] = pd.to_datetime(outstanding_df['period'], format='%Y-%m')
         credit_note_df['period'] = pd.to_datetime(credit_note_df['period'], format='%Y-%m')
@@ -163,13 +156,30 @@ class DataAggregator:
         return final_data
     
     def save_dataset(self, final_data, file_path=None):
-        """Save the final dataset to CSV."""
+        """Save the final dataset to CSV with data type information."""
         if file_path is None:
             file_path = OUTPUT_FILE_PATH
-        dlt_writer = DLTWriter(catalog="provisioned-tableau-data", schema="data_science")
-        print(f"Saving dataset to {file_path}...")
-        dlt_writer.write_table(final_data, file_path, mode="overwrite")
-        print(f"Dataset saved successfully! Shape: {final_data.shape}")
+        
+        # Save to CSV with data types
+        csv_path = file_path.replace('.csv', '') + '.csv'
+        dtype_path = file_path.replace('.csv', '') + '_dtypes.json'
+        
+        print(f"💾 Saving dataset to {csv_path}...")
+        print(f"💾 Saving data types to {dtype_path}...")
+        
+        # Save CSV and data types using dtype manager
+        save_dataframe_with_dtypes(final_data, csv_path, dtype_path)
+        
+        # Also save to DLT if needed
+        try:
+            dlt_writer = DLTWriter(catalog="provisioned-tableau-data", schema="data_science")
+            dlt_writer.write_table(final_data, file_path, mode="overwrite")
+            print(f"✅ Dataset also saved to DLT: {file_path}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save to DLT: {e}")
+        
+        print(f"✅ Dataset saved successfully! Shape: {final_data.shape}")
+        print(f"📊 Data types preserved for {len(final_data.columns)} columns")
         
         return final_data
     
