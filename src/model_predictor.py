@@ -8,10 +8,11 @@ import numpy as np
 import joblib
 import os
 from datetime import datetime
-from .model_config import MODEL_PATHS, DATA_CONFIG, EVALUATION_CONFIG
-from .data_preprocessor import DataPreprocessor
-from .utils import validate_dataframe, handle_missing_values
-
+from src.model_config import MODEL_PATHS, DATA_CONFIG, EVALUATION_CONFIG
+from src.data_preprocessor import DataPreprocessor
+from src.utils import validate_dataframe, handle_missing_values
+from src.dtype_manager import DtypeManager, load_dataframe_with_dtypes, find_dtype_file
+from dlt_utils import DLTReader
 
 class ModelPredictor:
     """Handles production predictions for dealer churn."""
@@ -22,9 +23,56 @@ class ModelPredictor:
         self.model = None
         self.preprocessor_info = preprocessor_info
         self.predictions = None
+    
+    def load_data(self, file_path=None):
+        """Load the feature dataset with preserved data types."""
+        if file_path is None:
+            file_path = MODEL_PATHS["input_data"]
         
+        # Check if it's a CSV file with dtype information
+        if file_path.endswith('.csv'):
+            try:
+                # Try to load with preserved data types
+                df = load_dataframe_with_dtypes(file_path)
+                print(f"✅ Data loaded with preserved data types from {file_path}")
+            except FileNotFoundError:
+                # Fallback to regular CSV loading
+                print(f"📊 Loading data from {file_path} (no dtype file found)...")
+                df = pd.read_csv(file_path)
+                print(f"⚠️  Warning: Data types may not be preserved")
+        else:
+            # Load from DLT
+            dlt_reader = DLTReader(catalog="provisioned-tableau-data", schema="data_science")
+            print(f"📊 Loading data from DLT table: {file_path}...")
+            df = dlt_reader.read_table(file_path).toPandas()
+            # Try to find and load corresponding dtype file
+            dtype_file_path = find_dtype_file(file_path)
+            
+            if dtype_file_path:
+                try:
+                    print(f"🔍 Found dtype file: {dtype_file_path}")
+                    dtype_manager = DtypeManager(dtype_file_path)
+                    df = dtype_manager.restore_dtypes(df)
+                    print(f"✅ Data types restored from {dtype_file_path}")
+                except Exception as e:
+                    print(f"⚠️  Warning: Could not restore data types from {dtype_file_path}: {e}")
+            else:
+                print(f"⚠️  Warning: No dtype file found for DLT table {file_path}")
+                print(f"   This may cause XGBoost compatibility issues if data types are not numeric")
+        
+        # Set index if dealer_code column exists
+        if 'dealer_code' in df.columns:
+            df.set_index('dealer_code', inplace=True)
+        
+        print(f"✅ Data loaded successfully. Shape: {df.shape}")
+        print(f"📊 Data types summary:")
+        print(f"   - Object columns: {len(df.select_dtypes(include=['object']).columns)}")
+        print(f"   - Numeric columns: {len(df.select_dtypes(include=[np.number]).columns)}")
+        
+        return df
+
     def load_model(self, model_path=None):
-        """Load the trained model."""
+        """Load the trained model and preprocessor info."""
         if model_path is None:
             model_path = self.model_path
         
@@ -35,7 +83,57 @@ class ModelPredictor:
         
         self.model = joblib.load(model_path)
         print("✅ Model loaded successfully!")
+        
+        # Try to load preprocessor info if available
+        self.load_preprocessor_info_if_available()
+        
         return self.model
+    
+    def load_preprocessor_info_if_available(self):
+        """Try to load preprocessor info from saved files."""
+        try:
+            # Look for preprocessor info file
+            preprocessor_info_path = MODEL_PATHS["model_output"].replace('.pkl', '_preprocessor_info.pkl')
+            
+            if os.path.exists(preprocessor_info_path):
+                self.preprocessor_info = joblib.load(preprocessor_info_path)
+                print("✅ Preprocessor info loaded from file")
+            else:
+                print("⚠️  Warning: Preprocessor info file not found")
+                print(f"   Expected location: {preprocessor_info_path}")
+                print("   Will need to create preprocessor info from training data")
+                
+                # Try to create preprocessor info from training data
+                self.create_preprocessor_info_from_training_data()
+                
+        except Exception as e:
+            print(f"⚠️  Warning: Could not load preprocessor info: {e}")
+            print("   Will need to create preprocessor info from training data")
+            self.create_preprocessor_info_from_training_data()
+    
+    def create_preprocessor_info_from_training_data(self):
+        """Create preprocessor info by running preprocessing on training data."""
+        try:
+            print("🔧 Creating preprocessor info from training data...")
+            
+            # Use the data preprocessor to create info
+            preprocessor = DataPreprocessor()
+            
+            # Load training data
+            training_data = preprocessor.load_data()
+            
+            # Run preprocessing to get the info
+            preprocessed_data = preprocessor.preprocess_data()
+            
+            # Extract preprocessor info
+            self.preprocessor_info = preprocessor.get_preprocessor_info()
+            
+            print("✅ Preprocessor info created from training data")
+            
+        except Exception as e:
+            print(f"❌ Error creating preprocessor info: {e}")
+            print("   You may need to run training first to create preprocessor info")
+            self.preprocessor_info = None
     
     def load_preprocessor_info(self, preprocessor_info):
         """Load preprocessor information for consistent data processing."""
@@ -186,7 +284,8 @@ class ModelPredictor:
                 data_source = MODEL_PATHS["input_data"]
             
             print(f"📊 Loading data from {data_source}...")
-            df = pd.read_csv(data_source)
+            df = self.load_data(data_source)
+            # df = pd.read_csv(data_source)
             
             # Prepare data
             X = self.prepare_production_data(df)

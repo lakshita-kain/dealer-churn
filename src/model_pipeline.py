@@ -24,7 +24,7 @@ class ModelPipeline:
         self.preprocessor = DataPreprocessor()
         self.trainer = ModelTrainer()
         self.evaluator = ModelEvaluator()
-        self.predictor = ModelPredictor()
+        self.predictor = ModelPredictor(preprocessor_info=self.preprocessor.get_preprocessor_info())
         self.explainer = ModelExplainer()
         
         self.training_results = None
@@ -89,8 +89,20 @@ class ModelPipeline:
             
             # Step 5: Setup Predictor
             print_pipeline_progress("Pipeline Setup", 5, 5, "Setting up production predictor")
+            
+            # Get preprocessor info
+            preprocessor_info = self.preprocessor.get_preprocessor_info()
+            
+            # Save preprocessor info with the model
+            self.trainer.save_model(
+                model=training_results['model'],
+                file_path=training_results['model_path'],
+                preprocessor_info=preprocessor_info
+            )
+            
+            # Setup predictor
             self.predictor.load_model(training_results['model_path'])
-            self.predictor.load_preprocessor_info(self.preprocessor.get_preprocessor_info())
+            self.predictor.load_preprocessor_info(preprocessor_info)
             
             print("\n🎉 Complete training pipeline finished successfully!")
             print(f"Model saved to: {training_results['model_path']}")
@@ -116,7 +128,6 @@ class ModelPipeline:
         try:
             # Load model and preprocessor info
             self.predictor.load_model()
-            
             # Run predictions for all dealers
             prediction_results = self.predictor.predict_all_dealers(
                 data_source=data_path,
@@ -262,9 +273,19 @@ class ModelPipeline:
                 save_results=False
             )
             
+            # Get preprocessor info
+            preprocessor_info = self.preprocessor.get_preprocessor_info()
+            
+            # Save preprocessor info with the model
+            self.trainer.save_model(
+                model=training_results['model'],
+                file_path=training_results['model_path'],
+                preprocessor_info=preprocessor_info
+            )
+            
             # Setup predictor
             self.predictor.load_model(training_results['model_path'])
-            self.predictor.load_preprocessor_info(self.preprocessor.get_preprocessor_info())
+            self.predictor.load_preprocessor_info(preprocessor_info)
             
             print("\n🎉 Quick training completed successfully!")
             

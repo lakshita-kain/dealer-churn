@@ -151,8 +151,8 @@ class ModelTrainer:
         print("✅ Final model trained successfully!")
         return self.best_model
     
-    def save_model(self, model=None, file_path=None):
-        """Save the trained model."""
+    def save_model(self, model=None, file_path=None, preprocessor_info=None):
+        """Save the trained model and preprocessor info."""
         if model is None:
             model = self.best_model
             
@@ -164,6 +164,13 @@ class ModelTrainer:
         
         print(f"💾 Saving model to {file_path}...")
         joblib.dump(model, file_path)
+        
+        # Save preprocessor info if provided
+        if preprocessor_info is not None:
+            preprocessor_info_path = file_path.replace('.pkl', '_preprocessor_info.pkl')
+            print(f"💾 Saving preprocessor info to {preprocessor_info_path}...")
+            joblib.dump(preprocessor_info, preprocessor_info_path)
+            print("✅ Preprocessor info saved!")
         
         print("✅ Model saved successfully!")
         return file_path
