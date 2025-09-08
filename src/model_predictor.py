@@ -289,7 +289,8 @@ class ModelPredictor:
             
             # Prepare data
             X = self.prepare_production_data(df)
-            
+            if X["dealer_count"].dtype == "object":
+                X["dealer_count"] = X["dealer_count"].astype("int64")
             # Make predictions
             y_pred, y_proba = self.predict_churn(X, return_probabilities=True)
             
